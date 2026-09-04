@@ -1,10 +1,17 @@
-﻿#include <iostream>
+#include <iostream>
 #include <vector>
 #include <cmath>
 #include <map>
 #include <iomanip>
 #include <algorithm>
-#include <sol/sol.hpp>
+#include <string>
+#include <sstream>
+#include <optional>
+#include <nlohmann/json.hpp>
+
+#define NOMINMAX
+#include <windows.h>
+#include <wininet.h>
 
 struct NoteStat {
     double time;
@@ -15,56 +22,10 @@ struct NoteStat {
     bool big;
 };
 
-int main() {
-    sol::state lua;
-    lua.open_libraries();
-
-    lua["package"]["loaded"]["fn-commands"] = true;
-
-    std::vector<NoteStat> notes;
-    double currentTime = 0.0;
-    double currentBPM = 120.0;
-    double currentAccel = 1.0;
-
-    lua.set_function("BPM", [&](double bpm) { currentBPM = bpm; });
-    lua.set_function("Accel", [&](double a) { currentAccel = a; });
-    lua.set_function("AccelEnd", [&](double a) { currentAccel = a; });
-    lua.set_function("Beat", [](sol::table, sol::optional<double>, sol::optional<double>) {});
-
-    lua.set_function("Step", [&](double num, double denom) {
-        currentTime += (num / denom) * 240.0 / currentBPM;
-        });
-
-    lua.set_function("Note", [&](double hitX, double hitVX, double hitVY, bool big, sol::optional<bool> fall) {
-        double speed = currentAccel * std::sqrt(hitVX * hitVX + hitVY * hitVY);
-        notes.push_back({ currentTime, hitX, hitVX, hitVY, speed, big });
-        });
-
-    lua.set_function("fnChart", [&](sol::table chartData) {
-        sol::optional<sol::table> levelsOpt = chartData["levels"];
-        if (levelsOpt) {
-            sol::table levels = levelsOpt.value();
-            for (auto& kv : levels) {
-                sol::table level = kv.second.as<sol::table>();
-                sol::optional<sol::function> contentOpt = level["content"];
-                if (contentOpt) {
-                    contentOpt.value()();
-                }
-            }
-        }
-        });
-
-    try {
-        lua.script_file("chart.lua");
-    }
-    catch (const sol::error& e) {
-        std::cerr << "解析エラー: " << e.what() << "\n";
-        return 1;
-    }
-
+void analyzeNotes(const std::vector<NoteStat>& notes) {
     if (notes.empty()) {
         std::cout << "ノートが存在しない．\n";
-        return 0;
+        return;
     }
 
     double duration = notes.back().time - notes.front().time;
@@ -108,7 +69,7 @@ int main() {
             }
         }
         return mode;
-        };
+    };
 
     double modeSpeedMetric = getMode(speedMetricCounts);
     double modeHitVX = getMode(hitVXCounts);
@@ -139,7 +100,7 @@ int main() {
             l++;
         }
         return maxD;
-        };
+    };
     double maxDensity1s = getMaxDensity(1.0);
     double maxDensity5s = getMaxDensity(5.0);
 
@@ -290,6 +251,139 @@ int main() {
 
     std::cout << "難易度(生): " << rawDifficulty << "\n";
     std::cout << "難易度(最終): " << finalDifficulty << "\n";
+}
 
-    return 0;
+const std::string host = "nikochan.utcode.net";
+
+std::optional<std::vector<uint8_t>> fetchHttps(const std::string& path) {
+    struct RaiiHandle {
+        HINTERNET handle;
+        RaiiHandle(HINTERNET handle): handle(handle) {}
+        ~RaiiHandle() { if (handle) InternetCloseHandle(handle); }
+    };
+    RaiiHandle hInternet = InternetOpenA("ChartAnalyzer/1.0", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+    if (!hInternet.handle) {
+        std::cerr << "InternetOpen failed: " << GetLastError() << std::endl;
+        return std::nullopt;
+    }
+
+    RaiiHandle hConnect = InternetConnectA(hInternet.handle, host.c_str(), INTERNET_DEFAULT_HTTPS_PORT, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+    if (!hConnect.handle) {
+        std::cerr << "InternetConnect failed: " << GetLastError() << std::endl;
+        return std::nullopt;
+    }
+
+    DWORD flags = INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE |
+                  INTERNET_FLAG_IGNORE_CERT_CN_INVALID | INTERNET_FLAG_IGNORE_CERT_DATE_INVALID;
+
+    RaiiHandle hRequest = HttpOpenRequestA(hConnect.handle, "GET", path.c_str(), NULL, NULL, NULL, flags, 0);
+    if (!hRequest.handle) {
+        std::cerr << "HttpOpenRequest failed: " << GetLastError() << std::endl;
+        return std::nullopt;
+    }
+
+    std::string headers = "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)\r\nAccept: */*\r\n";
+    BOOL sent = HttpSendRequestA(hRequest.handle, headers.c_str(), static_cast<DWORD>(headers.length()), NULL, 0);
+    if (!sent) {
+        DWORD err = GetLastError();
+        std::cerr << "HttpSendRequest failed with error code: " << err << std::endl;
+        return std::nullopt;
+    }
+
+    DWORD statusCode = 0;
+    DWORD statusCodeSize = sizeof(statusCode);
+    HttpQueryInfoA(hRequest.handle, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, &statusCode, &statusCodeSize, NULL);
+    if (statusCode != 200) {
+        std::cerr << "HTTP status: " << statusCode;
+        return std::nullopt;
+    }
+
+    std::vector<uint8_t> result;
+    char buffer[8192];
+    DWORD bytesRead = 0;
+    while (InternetReadFile(hRequest.handle, buffer, sizeof(buffer), &bytesRead) && bytesRead > 0) {
+        result.insert(result.end(), buffer, buffer + bytesRead);
+    }
+
+    return result;
+}
+
+std::string utf8ToAnsi(const std::string& utf8Str) {
+    if (utf8Str.empty()) return "";
+
+    // 1. UTF-8 から UTF-16 (Wchar) へ変換
+    int wlen = MultiByteToWideChar(CP_UTF8, 0, utf8Str.data(), (int)utf8Str.size(), NULL, 0);
+    if (wlen <= 0) return "";
+    
+    std::wstring wstr(wlen, 0);
+    MultiByteToWideChar(CP_UTF8, 0, utf8Str.data(), (int)utf8Str.size(), &wstr[0], wlen);
+
+    // 2. UTF-16 から ANSI (CP_ACP) へ変換
+    int alen = WideCharToMultiByte(CP_ACP, 0, wstr.data(), wlen, NULL, 0, NULL, NULL);
+    if (alen <= 0) return "";
+
+    std::string astr(alen, 0);
+    WideCharToMultiByte(CP_ACP, 0, wstr.data(), wlen, &astr[0], alen, NULL, NULL);
+
+    return astr;
+}
+
+int main(int argc, char* argv[]) {
+    std::cout << "cid を入力してください: ";
+    std::string cid;
+    std::getline(std::cin, cid);
+
+    auto rawBytes = fetchHttps("/api/brief/" + cid);
+    if(!rawBytes) return 1;
+    std::string jsonStr((*rawBytes).begin(), (*rawBytes).end());
+    auto brief = nlohmann::json::parse(jsonStr);
+
+    std::string title = brief.value("title", "");
+    std::string composer = brief.value("composer", "");
+    std::string chartCreator = brief.value("chartCreator", "");
+    std::cout << "\n";
+    std::cout << "タイトル      : " << utf8ToAnsi(title) << std::endl;
+    std::cout << "作曲者        : " << utf8ToAnsi(composer) << std::endl;
+    std::cout << "譜面制作者    : " << utf8ToAnsi(chartCreator) << std::endl;
+
+    const auto& levels = brief["levels"];
+
+    for (size_t lvIndex = 0; lvIndex < levels.size(); ++lvIndex) {
+        if(levels[lvIndex].value("unlisted", false)) continue;
+
+        std::string lvName = levels[lvIndex].value("name", "");
+        std::string lvType = levels[lvIndex].value("type", "Single");
+        int diff = levels[lvIndex].value("difficulty", 0);
+        std::cout << "\n========================================\n";
+        std::cout << "レベル [" << lvIndex << "] "
+                  << utf8ToAnsi(lvName.empty() ? "" : lvName + " ")
+                  << "(" << lvType << ") "
+                  << "公式難易度: " << diff
+                  << " の解析を開始"
+                  << std::endl;
+        std::cout << "\n";
+
+        auto rawBytes = fetchHttps("/api/seqFile/" + cid + "/" + std::to_string(lvIndex));
+        if(!rawBytes) continue;
+        nlohmann::json chart = nlohmann::json::from_msgpack(*rawBytes);
+
+        std::vector<NoteStat> notes;
+        if (chart.contains("notes") && chart["notes"].is_array()) {
+            for (const auto& n : chart["notes"]) {
+                double t = n.value("hitTimeSec", 0.0);
+                double hitX = n.value("targetX", 0.5) * 10.0 - 5.0;
+                double hitVX = n.value("vx", 0.0) * 4.0;
+                double hitVY = n.value("vy", 0.0) * 4.0;
+                bool big = n.value("big", false);
+                // display[0] は打鍵時（timeSecBefore == 0）の運動パラメータで、
+                // du * 120.0 がその音符の打鍵時スクロール速度倍率 (Accel) に相当
+                double accel = n["display"][0].value("du", 1.0 / 120.0) * 120.0;
+
+                double speed = accel * std::sqrt(hitVX * hitVX + hitVY * hitVY);
+                notes.push_back({ t, hitX, hitVX, hitVY, speed, big });
+            }
+        }
+
+        analyzeNotes(notes);
+    }
 }

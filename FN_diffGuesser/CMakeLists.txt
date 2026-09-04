@@ -1,12 +1,27 @@
-cmake_minimum_required(VERSION 3.10)
-project(ChartAnalyzer)
+cmake_minimum_required(VERSION 3.16)
+project(ChartAnalyzer CXX)
 
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Lua REQUIRED)
+if(MSVC)
+    add_compile_options(/source-charset:utf-8)
+endif()
+
+include(FetchContent)
+
+FetchContent_Declare(
+    nlohmann_json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG        v3.11.3
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(nlohmann_json)
 
 add_executable(analyzer FN_diffGuesser.cpp)
-target_include_directories(analyzer PRIVATE ${LUA_INCLUDE_DIR})
-# Sol2を同梱している場合はそのパスも追加する
-# target_include_directories(analyzer PRIVATE ${CMAKE_SOURCE_DIR}/sol)
-target_link_libraries(analyzer PRIVATE ${LUA_LIBRARIES})
+
+target_link_libraries(analyzer PRIVATE nlohmann_json::nlohmann_json)
+
+if(WIN32)
+    target_link_libraries(analyzer PRIVATE wininet)
+endif()
