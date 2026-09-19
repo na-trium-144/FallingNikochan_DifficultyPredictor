@@ -1,4 +1,4 @@
-#include <iostream>
+﻿#include <iostream>
 #include <vector>
 #include <cmath>
 #include <map>
@@ -69,7 +69,7 @@ void analyzeNotes(const std::vector<NoteStat>& notes) {
             }
         }
         return mode;
-    };
+        };
 
     double modeSpeedMetric = getMode(speedMetricCounts);
     double modeHitVX = getMode(hitVXCounts);
@@ -100,7 +100,7 @@ void analyzeNotes(const std::vector<NoteStat>& notes) {
             l++;
         }
         return maxD;
-    };
+        };
     double maxDensity1s = getMaxDensity(1.0);
     double maxDensity5s = getMaxDensity(5.0);
 
@@ -166,38 +166,32 @@ void analyzeNotes(const std::vector<NoteStat>& notes) {
     }
     double bigTrueRatio = (count > 0) ? (static_cast<double>(bigTrueCount) / count) : 0.0;
 
-    // --- パラメータ計算 (キャップ前後の値を保持) ---
-    double penalty = std::min(1.0, 0.0005 * duration * duration + 0.5);
     double bigNps = duration > 0.0 ? (count + bigTrueCount) / duration : 0.0;
 
     double rawNotesBase = std::round((std::log(std::max(1.0, bigNps)) / std::log(5.0)) * 100.0);
-    double valNotes = std::round(std::min(200.0, rawNotesBase) * penalty);
-    double rawNotes = std::round(rawNotesBase * penalty);
+    double valNotes = std::round(std::min(200.0, rawNotesBase));
+    double rawNotes = std::round(rawNotesBase);
 
     double rawPeakBase = std::round(maxDensity1s * maxDensity5s * 0.7);
-    double valPeak = std::round(std::min(200.0, rawPeakBase) * penalty);
-    double rawPeak = std::round(rawPeakBase * penalty);
+    double valPeak = std::round(std::min(200.0, rawPeakBase));
+    double rawPeak = std::round(rawPeakBase);
 
     double rawBigBase = std::round(std::min(50.0, count * bigTrueCount / 800.0) + (bigAdjacentCount01 * bigAdjacentCount01) / 3000.0 + bigAdjacentCount02 / 10.0);
-    double valBig = std::round(std::min(200.0, rawBigBase) * penalty);
-    double rawBig = std::round(rawBigBase * penalty);
+    double valBig = std::round(std::min(200.0, rawBigBase));
+    double rawBig = std::round(rawBigBase);
 
-    double rawScrollBase = std::round(modeSpeedMetric / 5.0);
-    double valScroll = std::round(std::min(200.0, rawScrollBase) * penalty);
-    double rawScroll = std::round(rawScrollBase * penalty);
+    double rawScrollBase = std::pow(modeSpeedMetric, 4.0) / 8000000000.0;
+    double valScroll = std::round(std::min(200.0, rawScrollBase));
+    double rawScroll = std::round(rawScrollBase);
 
-    double rawSpreadBase = (hitXDiffVar * 10.0) * (hitVXVar * 10.0);
-    double valSpread = std::round(std::min(200.0, rawSpreadBase) * penalty);
-    double rawSpread = std::round(rawSpreadBase * penalty);
+    double rawSpreadCalc = (hitXDiffVar * 10.0) * (hitVXVar * 10.0);
+    double rawSpreadBase = 30.0 * std::log(rawSpreadCalc + 1.0);
+    double valSpread = std::round(std::min(200.0, rawSpreadBase));
+    double rawSpread = std::round(rawSpreadBase);
 
-    double rawChordBase = 0.0;
-    double valChord = 0.0;
-    double rawChord = 0.0;
-    if (simultaneousScore > 0) {
-        rawChordBase = std::max(std::round(simultaneousScore / 3.0), std::round(30.0 * std::log(simultaneousScore)));
-        valChord = std::round(std::min(200.0, rawChordBase) * penalty);
-        rawChord = std::round(rawChordBase * penalty);
-    }
+    double rawChordBase = simultaneousScore * 0.3;
+    double valChord = std::round(std::min(200.0, rawChordBase));
+    double rawChord = std::round(rawChordBase);
 
     double params[6] = { valNotes, valPeak, valBig, valScroll, valSpread, valChord };
     double maxParam = params[0];
@@ -241,7 +235,6 @@ void analyzeNotes(const std::vector<NoteStat>& notes) {
     std::cout << "  Big隣接ペア数: [0.1秒以内] " << bigAdjacentCount01 << " / [0.2秒以内] " << bigAdjacentCount02 << "\n\n";
 
     std::cout << "評価パラメータ\n";
-    std::cout << "PENALTY: " << penalty << "\n";
     std::cout << "NOTES: " << valNotes << "(" << rawNotes << ")\n";
     std::cout << "PEAK: " << valPeak << "(" << rawPeak << ")\n";
     std::cout << "BIG: " << valBig << "(" << rawBig << ")\n";
@@ -258,7 +251,7 @@ const std::string host = "nikochan.utcode.net";
 std::optional<std::vector<uint8_t>> fetchHttps(const std::string& path) {
     struct RaiiHandle {
         HINTERNET handle;
-        RaiiHandle(HINTERNET handle): handle(handle) {}
+        RaiiHandle(HINTERNET handle) : handle(handle) {}
         ~RaiiHandle() { if (handle) InternetCloseHandle(handle); }
     };
     RaiiHandle hInternet = InternetOpenA("ChartAnalyzer/1.0", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
@@ -274,7 +267,7 @@ std::optional<std::vector<uint8_t>> fetchHttps(const std::string& path) {
     }
 
     DWORD flags = INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE |
-                  INTERNET_FLAG_IGNORE_CERT_CN_INVALID | INTERNET_FLAG_IGNORE_CERT_DATE_INVALID;
+        INTERNET_FLAG_IGNORE_CERT_CN_INVALID | INTERNET_FLAG_IGNORE_CERT_DATE_INVALID;
 
     RaiiHandle hRequest = HttpOpenRequestA(hConnect.handle, "GET", path.c_str(), NULL, NULL, NULL, flags, 0);
     if (!hRequest.handle) {
@@ -311,14 +304,12 @@ std::optional<std::vector<uint8_t>> fetchHttps(const std::string& path) {
 std::string utf8ToAnsi(const std::string& utf8Str) {
     if (utf8Str.empty()) return "";
 
-    // 1. UTF-8 から UTF-16 (Wchar) へ変換
     int wlen = MultiByteToWideChar(CP_UTF8, 0, utf8Str.data(), (int)utf8Str.size(), NULL, 0);
     if (wlen <= 0) return "";
-    
+
     std::wstring wstr(wlen, 0);
     MultiByteToWideChar(CP_UTF8, 0, utf8Str.data(), (int)utf8Str.size(), &wstr[0], wlen);
 
-    // 2. UTF-16 から ANSI (CP_ACP) へ変換
     int alen = WideCharToMultiByte(CP_ACP, 0, wstr.data(), wlen, NULL, 0, NULL, NULL);
     if (alen <= 0) return "";
 
@@ -334,7 +325,7 @@ int main(int argc, char* argv[]) {
     std::getline(std::cin, cid);
 
     auto rawBytes = fetchHttps("/api/brief/" + cid);
-    if(!rawBytes) return 1;
+    if (!rawBytes) return 1;
     std::string jsonStr((*rawBytes).begin(), (*rawBytes).end());
     auto brief = nlohmann::json::parse(jsonStr);
 
@@ -349,23 +340,23 @@ int main(int argc, char* argv[]) {
     const auto& levels = brief["levels"];
 
     for (size_t lvIndex = 0; lvIndex < levels.size(); ++lvIndex) {
-        if(levels[lvIndex].value("unlisted", false)) continue;
+        if (levels[lvIndex].value("unlisted", false)) continue;
 
         std::string lvName = levels[lvIndex].value("name", "");
         std::string lvType = levels[lvIndex].value("type", "Single");
         int diff = levels[lvIndex].value("difficulty", 0);
         std::cout << "\n========================================\n";
         std::cout << "レベル [" << lvIndex << "] "
-                  << utf8ToAnsi(lvName.empty() ? "" : lvName + " ")
-                  << "(" << lvType << ") "
-                  << "公式難易度: " << diff
-                  << " の解析を開始"
-                  << std::endl;
+            << utf8ToAnsi(lvName.empty() ? "" : lvName + " ")
+            << "(" << lvType << ") "
+            << "公式難易度: " << diff
+            << " の解析を開始"
+            << std::endl;
         std::cout << "\n";
 
-        auto rawBytes = fetchHttps("/api/seqFile/" + cid + "/" + std::to_string(lvIndex));
-        if(!rawBytes) continue;
-        nlohmann::json chart = nlohmann::json::from_msgpack(*rawBytes);
+        auto rawBytesLv = fetchHttps("/api/seqFile/" + cid + "/" + std::to_string(lvIndex));
+        if (!rawBytesLv) continue;
+        nlohmann::json chart = nlohmann::json::from_msgpack(*rawBytesLv);
 
         std::vector<NoteStat> notes;
         if (chart.contains("notes") && chart["notes"].is_array()) {
@@ -375,11 +366,10 @@ int main(int argc, char* argv[]) {
                 double hitVX = n.value("vx", 0.0) * 4.0;
                 double hitVY = n.value("vy", 0.0) * 4.0;
                 bool big = n.value("big", false);
-                // display[0] は打鍵時（timeSecBefore == 0）の運動パラメータで、
-                // du * 120.0 がその音符の打鍵時スクロール速度倍率 (Accel) に相当
-                double accel = n["display"][0].value("du", 1.0 / 120.0) * 120.0;
 
+                double accel = n["display"][0].value("du", 1.0 / 120.0) * 120.0;
                 double speed = accel * std::sqrt(hitVX * hitVX + hitVY * hitVY);
+
                 notes.push_back({ t, hitX, hitVX, hitVY, speed, big });
             }
         }

@@ -1,27 +1,25 @@
-cmake_minimum_required(VERSION 3.16)
+# CMake 3.11以降が必要
+cmake_minimum_required(VERSION 3.11)
 project(ChartAnalyzer CXX)
 
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(MSVC)
     add_compile_options(/source-charset:utf-8)
 endif()
 
+# 1. FetchContentを使ってnlohmann/jsonを自動ダウンロード
 include(FetchContent)
-
 FetchContent_Declare(
-    nlohmann_json
-    GIT_REPOSITORY https://github.com/nlohmann/json.git
-    GIT_TAG        v3.11.3
-    GIT_SHALLOW    TRUE
+    json
+    URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
 )
-FetchContent_MakeAvailable(nlohmann_json)
+FetchContent_MakeAvailable(json)
 
+# 2. 実行ファイルの定義（ファイル名は実際の環境に合わせること）
 add_executable(analyzer FN_diffGuesser.cpp)
 
+# 3. 実行ファイルにダウンロードしたjsonライブラリをリンクさせる
 target_link_libraries(analyzer PRIVATE nlohmann_json::nlohmann_json)
-
-if(WIN32)
-    target_link_libraries(analyzer PRIVATE wininet)
-endif()
+# ネットワーク通信用のwininetも必要に応じてリンクする
+target_link_libraries(analyzer PRIVATE wininet)
